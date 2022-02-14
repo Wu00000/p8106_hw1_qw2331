@@ -8,9 +8,12 @@ library(tidyverse)
 library(summarytools)
 library(corrplot)
 library(caret)
+library(glmnet)
+library(plotmo)
+library(Matrix)
 
 knitr::opts_chunk$set(
-  fig.width = 6,
+  fig.width = 12,
   fig.asp = .6,
   out.width = "90%",
   message = FALSE,
@@ -38,7 +41,7 @@ dfSummary(trainHousing)
 From the summary, there are `25` predictors with `1` response `Sale_Price` in the train data and each column has `1440` observations without missing values. And there are `4` categorical predictors so additional transformations are needed as they are difficult to interpret and potentially causing other problems.
 
 ### Data Preprocessing
-```{r, fig.width = 12}
+```{r}
 # Convert categorical into dummy variables
 train_x <- model.matrix(Sale_Price ~ ., trainHousing)[ ,-1]
 train_y <- trainHousing$Sale_Price
@@ -51,18 +54,37 @@ corrplot(cor(train_x),
 
 ### Least Squares
 ```{r}
-ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
-
 set.seed(1234)
-lm.fit <- train(train_x, train_y,
-                method = "lm",
-                trControl = ctrl)
 
-summary(lm.fit)
+lm_fit <- train(train_x, train_y,
+                method = "lm",
+                trControl = trainControl(method = "cv", number = 10))
+
+summary(lm_fit)
 ```
 Based on both the correlation plot and the modeling result, the disadvantage of using least squares to fit a linear model in this case is that there are some collinear covariates. When two predictor variables are highly correlated, the variance of the estimated function will increase and lead to a higher MSE and lower prediction accuracy.
 
 ### Lasso
+```{r}
+set.seed(1234)
+
+cv_lasso <- cv.glmnet(train_x, train_y,
+                      alpha = 1,
+                      lambda = exp(seq(11, 3, length = 100)))
+
+plot(cv_lasso)
+plot_glmnet(cv_lasso$glmnet.fit)
+
+# Number of predictors when using lambda.1se
+predict(cv_lasso, s = "lambda.1se", type = "coefficients")
+
+# Calculate the test error using RMSE
+lasso_rmse <- 
+  RMSE(pred = predict(cv_lasso, newx = test_x, s = "lambda.min", type = "response"), obs = test_y)
+```
+The test error of the lasso regression model is ``r lasso_rmse``. And when the 1SE rule is applied, there are ``r nnzero(predict(cv_lasso, s = "lambda.1se", type = "coefficients")) - 1`` predictors included in the model.
+
+### Elastic net
 ```{r}
 
 ```
