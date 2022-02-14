@@ -7,6 +7,7 @@ output: github_document
 library(tidyverse)
 library(summarytools)
 library(corrplot)
+library(caret)
 
 knitr::opts_chunk$set(
   fig.width = 6,
@@ -46,5 +47,23 @@ test_y <- testHousing$Sale_Price
 
 corrplot(cor(train_x), 
          type = "upper", tl.cex = .8, tl.col = "black")
+```
+
+### Least Squares
+```{r}
+ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5)
+
+set.seed(1234)
+lm.fit <- train(train_x, train_y,
+                method = "lm",
+                trControl = ctrl)
+
+summary(lm.fit)
+```
+Based on both the correlation plot and the modeling result, the disadvantage of using least squares to fit a linear model in this case is that there are some collinear covariates. When two predictor variables are highly correlated, the variance of the estimated function will increase and lead to a higher MSE and lower prediction accuracy.
+
+### Lasso
+```{r}
+
 ```
 
