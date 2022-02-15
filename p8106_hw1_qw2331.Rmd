@@ -11,9 +11,10 @@ library(caret)
 library(glmnet)
 library(plotmo)
 library(Matrix)
+library(htmlTable)
 
 knitr::opts_chunk$set(
-  fig.width = 12,
+  fig.width = 10,
   fig.asp = .6,
   out.width = "90%",
   message = FALSE,
@@ -31,14 +32,19 @@ st_options(
 
 
 ### Data Overview
-```{r}
+```{r, results = "hide"}
+# Import data
 trainHousing <- read_csv("./data/housing_training.csv")
 testHousing <- read_csv("./data/housing_test.csv")
 
-# A brief overview of train data
-dfSummary(trainHousing)
+# For each column in train data
+# Check missing values
+sum(colSums(is.na(trainHousing)))
 ```
-From the summary, there are `25` predictors with `1` response `Sale_Price` in the train data and each column has `1440` observations without missing values. And there are `4` categorical predictors so additional transformations are needed as they are difficult to interpret and potentially causing other problems.
+* In general, there are ``r ncol(trainHousing) - 1`` predictors and ``r nrow(trainHousing)`` observations without missing values.  
+* The response of the data is `Sale_Price`.  
+* There are ``r sum(sapply(trainHousing, class) == "character")`` categorical predictors so additional transformations are needed as they are difficult to interpret in the result and will potentially cause other problems.
+
 
 ### Data Preprocessing
 ```{r}
@@ -48,9 +54,11 @@ train_y <- trainHousing$Sale_Price
 test_x <- model.matrix(Sale_Price ~ ., testHousing)[ ,-1]
 test_y <- testHousing$Sale_Price
 
+# Correlation plot
 corrplot(cor(train_x), 
          type = "upper", tl.cex = .8, tl.col = "black")
 ```
+
 
 ### Least Squares
 ```{r}
@@ -60,9 +68,11 @@ lm_fit <- train(train_x, train_y,
                 method = "lm",
                 trControl = trainControl(method = "cv", number = 10))
 
-summary(lm_fit)
+# Show coefficients of 38 predictors
+lm_fit$finalModel$coefficients[-1]
 ```
-Based on both the correlation plot and the modeling result, the disadvantage of using least squares to fit a linear model in this case is that there are some collinear covariates. When two predictor variables are highly correlated, the variance of the estimated function will increase and lead to a higher MSE and lower prediction accuracy.
+**Disadvantage:** Based on both the correlation plot and the modeling result, the disadvantage of using least squares to fit a linear model in this case is that there are some collinear covariates. When two predictor variables are highly correlated, the variance of the estimated function will increase and lead to a higher MSE and lower prediction accuracy.
+
 
 ### Lasso
 ```{r}
@@ -72,20 +82,33 @@ cv_lasso <- cv.glmnet(train_x, train_y,
                       alpha = 1,
                       lambda = exp(seq(11, 3, length = 100)))
 
+par(mfrow = c(1, 2))
 plot(cv_lasso)
 plot_glmnet(cv_lasso$glmnet.fit)
 
 # Number of predictors when using lambda.1se
 predict(cv_lasso, s = "lambda.1se", type = "coefficients")
 
-# Calculate the test error using RMSE
+# Calculate the test error
 lasso_rmse <- 
-  RMSE(pred = predict(cv_lasso, newx = test_x, s = "lambda.min", type = "response"), obs = test_y)
+  RMSE(pred = predict(cv_lasso, newx = test_x, 
+                      s = "lambda.min", type = "response"), obs = test_y)
 ```
-The test error of the lasso regression model is ``r lasso_rmse``. And when the 1SE rule is applied, there are ``r nnzero(predict(cv_lasso, s = "lambda.1se", type = "coefficients")) - 1`` predictors included in the model.
+**Results:** The test error of the lasso regression model is ``r lasso_rmse``. And when the 1SE rule is applied, there are ``r nnzero(predict(cv_lasso, s = "lambda.1se", type = "coefficients")) - 1`` predictors included in the model.
+
 
 ### Elastic net
 ```{r}
+set.seed(1234)
 
+enet_fit <- train(train_x, train_y,
+                  method = "glmnet",
+                  tuneGrid = expand.grid(alpha = seq(0, 1, length = 20),
+                                         lambda = exp(seq(8, 0, length = 100))),
+                  trControl = trainControl(method = "cv", number = 10))
+
+plot(enet_fit, xTrans = log)
+
+enet_fit$bestTune
 ```
 
