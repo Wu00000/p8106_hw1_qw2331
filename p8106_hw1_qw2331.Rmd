@@ -11,14 +11,15 @@ library(caret)
 library(glmnet)
 library(plotmo)
 library(Matrix)
-library(htmlTable)
 
 knitr::opts_chunk$set(
-  fig.width = 10,
+  fig.width = 12,
   fig.asp = .6,
   out.width = "90%",
   message = FALSE,
   warning = FALSE)
+
+options(scipen = 100) # Remove scientific notation
 
 # Set options for dfSummary()
 st_options(
@@ -40,8 +41,21 @@ testHousing <- read_csv("./data/housing_test.csv")
 # For each column in train data
 # Check missing values
 sum(colSums(is.na(trainHousing)))
+
+# Check outliers
+trainHousing[, -c(15, 16, 18, 19, 26)] %>% # Exclude character & response columns
+  pivot_longer(
+    everything(),
+    names_to = "Variable",
+    values_to = "Value"
+  ) %>%
+  ggplot(aes(x = Variable, y = Value)) + 
+  geom_boxplot(aes(color = Variable), show.legend = FALSE) + 
+  facet_wrap(~ Variable, scales = "free", nrow = 3, ncol = 7) + 
+  theme(axis.text.x = element_blank())
 ```
-* In general, there are ``r ncol(trainHousing) - 1`` predictors and ``r nrow(trainHousing)`` observations without missing values.  
+
+* In general, there are ``r ncol(trainHousing) - 1`` predictors and ``r nrow(trainHousing)`` observations `without` missing values.  
 * The response of the data is `Sale_Price`.  
 * There are ``r sum(sapply(trainHousing, class) == "character")`` categorical predictors so additional transformations are needed as they are difficult to interpret in the result and will potentially cause other problems.
 
@@ -56,7 +70,7 @@ test_y <- testHousing$Sale_Price
 
 # Correlation plot
 corrplot(cor(train_x), 
-         type = "upper", tl.cex = .8, tl.col = "black")
+         type = "full", tl.cex = .7, tl.col = "black")
 ```
 
 
@@ -68,10 +82,12 @@ lm_fit <- train(train_x, train_y,
                 method = "lm",
                 trControl = trainControl(method = "cv", number = 10))
 
-# Show coefficients of 38 predictors
+# Coefficients of 39 predictors
 lm_fit$finalModel$coefficients[-1]
 ```
-**Disadvantage:** Based on both the correlation plot and the modeling result, the disadvantage of using least squares to fit a linear model in this case is that there are some collinear covariates. When two predictor variables are highly correlated, the variance of the estimated function will increase and lead to a higher MSE and lower prediction accuracy.
+* **Disadvantage of using least squares:**  
+  * One drawback is that there are some collinear covariates. When two predictor variables are highly correlated, the variance of the estimated function will increase and thus a higher MSE and lower prediction accuracy.  
+  * The other one is that least-squares method is highly sensitive to outliers as it simply minimizes the redisuals of each data point.
 
 
 ### Lasso
@@ -93,8 +109,17 @@ predict(cv_lasso, s = "lambda.1se", type = "coefficients")
 lasso_rmse <- 
   RMSE(pred = predict(cv_lasso, newx = test_x, 
                       s = "lambda.min", type = "response"), obs = test_y)
+
+# --- Use caret ---
+set.seed(1234)
+
+lasso_fit <- train(train_x, train_y,
+                   method = "glmnet",
+                   tuneGrid = expand.grid(alpha = 1,
+                                          lambda = exp(seq(11, 3, length = 100))),
+                   trControl = trainControl(method = "cv", selectionFunction = "oneSE"))
 ```
-**Results:** The test error of the lasso regression model is ``r lasso_rmse``. And when the 1SE rule is applied, there are ``r nnzero(predict(cv_lasso, s = "lambda.1se", type = "coefficients")) - 1`` predictors included in the model.
+* **Results:** The test error of the lasso regression is ``r round(lasso_rmse, 2)``. When the 1SE rule is applied, there are ``r nnzero(predict(cv_lasso, s = "lambda.1se", type = "coefficients")) - 1`` predictors included in the model.
 
 
 ### Elastic net
@@ -110,5 +135,11 @@ enet_fit <- train(train_x, train_y,
 plot(enet_fit, xTrans = log)
 
 enet_fit$bestTune
+```
+
+
+### Partial least squares (PLS)
+```{r}
+
 ```
 
